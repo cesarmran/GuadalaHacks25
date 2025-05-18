@@ -33,13 +33,13 @@ def calcular_pois_desde_porcentaje(pois_csv, lineas_geojson):
     df_pois = pd.read_csv(pois_csv)
 
     for _, row in df_pois.iterrows():
-        link_id = str(row['LIMK_ID'])
+        link_id = str(row['LINK_ID'])
         porcentaje = row['PERCFRREF']
 
         puntos = puntos_por_linea.get(link_id)
         if puntos:
             lat, lon = interpolar_punto(puntos['inicio'], puntos['fin'], porcentaje)
-            print(f"POI en link_id {link_id} ({porcentaje*100:.1f}%): lat = {lat:.6f}, lon = {lon:.6f}")
+            print(f"POI en link_id {link_id} ({porcentaje:.1f}%): lat = {lat:.6f}, lon = {lon:.6f}")
         else:
             print(f"⚠ No se encontró geometría para link_id {link_id}")
 

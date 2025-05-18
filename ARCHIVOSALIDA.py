@@ -1,51 +1,74 @@
 import json
 import pandas as pd
+from shapely.geometry import shape, LineString
+from shapely.ops import transform
+import pyproj
 
-def obtener_puntos_inicio_fin_por_link(geojson_path):
+def ordenar_coords_por_criterio(coords):
+    """
+    Ordena las coordenadas según latitud, luego longitud, luego z-level (si hay).
+    """
+    return sorted(coords, key=lambda c: (c[1], c[0], c[2] if len(c) > 2 else 0))
+
+def reordenar_linestring_si_es_necesario(linea):
+    coords = list(linea.coords)
+    ordenadas = ordenar_coords_por_criterio(coords)
+    inicio_deseado = ordenadas[0]
+    
+    if coords[0] != inicio_deseado:
+        coords.reverse()
+    return LineString(coords)
+
+def proyectar_a_metrico(geom):
+    project = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True).transform
+    return transform(project, geom)
+
+def reproyectar_a_wgs84(geom):
+    project = pyproj.Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True).transform
+    return transform(project, geom)
+
+def interpolar_punto_en_linea(linea, porcentaje):
+    linea_ordenada = reordenar_linestring_si_es_necesario(linea)
+    linea_m = proyectar_a_metrico(linea_ordenada)
+    distancia = linea_m.length * porcentaje
+    punto_m = linea_m.interpolate(distancia)
+    punto = reproyectar_a_wgs84(punto_m)
+    return punto.y, punto.x  # lat, lon
+
+def cargar_lineas_como_diccionario(geojson_path):
     with open(geojson_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    puntos_por_link = {}
+    lineas_por_link = {}
 
     for feature in data.get('features', []):
-        properties = feature.get('properties', {})
-        geometry = feature.get('geometry', {})
-        tipo = geometry.get('type', '')
-        coords = geometry.get('coordinates', [])
-        link_id = properties.get('link_id')
-
-        if link_id is None or tipo != 'LineString' or len(coords) < 2:
+        link_id = feature['properties'].get('link_id')
+        if link_id is None:
             continue
-
         link_id = str(link_id).upper()
-        inicio = coords[0][:2]
-        fin = coords[-1][:2]
-        puntos_por_link[link_id] = {'inicio': inicio, 'fin': fin}
 
-    return puntos_por_link
+        geom = feature.get('geometry')
+        if geom and geom['type'] == 'LineString':
+            linea = shape(geom)
+            lineas_por_link[link_id] = linea
 
-def interpolar_punto(inicio, fin, porcentaje):
-    lon1, lat1 = inicio
-    lon2, lat2 = fin
-    lat = lat1 + (lat2 - lat1) * porcentaje
-    lon = lon1 + (lon2 - lon1) * porcentaje
-    return (lat, lon)
+    return lineas_por_link
 
 def calcular_pois_desde_porcentaje(pois_csv, lineas_geojson, salida_csv='pois_interpolados.csv'):
-    puntos_por_linea = obtener_puntos_inicio_fin_por_link(lineas_geojson)
+    lineas_por_link = cargar_lineas_como_diccionario(lineas_geojson)
     df_pois = pd.read_csv(pois_csv)
 
     resultados = []
 
     for _, row in df_pois.iterrows():
-        link_id = str(row['link_id']).upper()
+        link_id = str(row['LINK_ID']).upper()
         porcentaje = row['PERCFRREF']
-        poi_id = row.get('POI_ID', None)  # Puedes ajustar el nombre si tienes un identificador
+        poi_id = row.get('POI_ID', None)
 
-        puntos = puntos_por_linea.get(link_id)
-        if puntos:
-            lat, lon = interpolar_punto(puntos['inicio'], puntos['fin'], porcentaje)
-            print(f"POI en LINK_ID {link_id} ({porcentaje*100:.1f}%): lat = {lat:.6f}, lon = {lon:.6f}")
+        linea = lineas_por_link.get(link_id)
+        if linea:
+            lat, lon = interpolar_punto_en_linea(linea, porcentaje)
+            print(f"POI {poi_id} en LINK_ID {link_id} ({porcentaje:.1f}%): lat = {lat:.6f}, lon = {lon:.6f}")
             resultados.append({
                 'id': poi_id,
                 'link_id': link_id,
@@ -54,7 +77,7 @@ def calcular_pois_desde_porcentaje(pois_csv, lineas_geojson, salida_csv='pois_in
                 'lon': lon
             })
         else:
-            print(f"⚠ No se encontró geometría para LINK_ID {link_id}")
+            print(f"⚠ No se encontró línea para LINK_ID {link_id}")
             resultados.append({
                 'id': poi_id,
                 'link_id': link_id,
@@ -63,10 +86,9 @@ def calcular_pois_desde_porcentaje(pois_csv, lineas_geojson, salida_csv='pois_in
                 'lon': None
             })
 
-    # Guardar resultados en CSV
     df_resultado = pd.DataFrame(resultados)
     df_resultado.to_csv(salida_csv, index=False)
-    print(f"\n✔ Resultados guardados en '{salida_csv}'")
+    print(f"\n✔ Resultados correctos guardados en '{salida_csv}'")
 
 calcular_pois_desde_porcentaje(
     pois_csv='/Users/ebonyvaladez/Desktop/data/POIs/POI_4815075.csv',
