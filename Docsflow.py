@@ -3,11 +3,11 @@ import pandas as pd
 import math
 
 # Ruta al archivo (puede ser .geojson o .json si es geoespacial) NAMING
-archivo = "C:/Users/52312/Downloads/Guadalahacks25/STREETS_NAMING_ADDRESSING/SREETS_NAMING_ADDRESSING_4815083.geojson"
+archivo = "C:/Users/52312/Downloads/Guadalahacks25/STREETS_NAMING_ADDRESSING/SREETS_NAMING_ADDRESSING_4815075.geojson"
 
 # Leer el archivo
 file1 = gpd.read_file(archivo)
-file2 = pd.read_csv("C:/Users/52312/Downloads/Guadalahacks25/POIs/POI_4815083.csv")
+file2 = pd.read_csv("C:/Users/52312/Downloads/Guadalahacks25/POIs/POI_4815075.csv")
 
 
 
@@ -31,12 +31,10 @@ merged = pd.merge(file1[[common_column, file1_column]],
 
 
 # Parámetros
-input_csv = merged
+df = merged
+
 geometry_column = "geometry"
 percentage_column = "percfrref"  # ← nombre real de la columna con porcentaje
-
-# Cargar CSV
-df = pd.read_csv(input_csv)
 
 # Haversine en metros
 def haversine(coord1, coord2):
@@ -100,14 +98,21 @@ total_distances = []
 percent_lats = []
 percent_lons = []
 
-# Procesar fila por fila
 for i, row in df.iterrows():
     geom = row[geometry_column]
     perc = row[percentage_column]
-    dist, lat, lon = process_linestring(geom, perc)
+
+    if pd.isna(perc) or not isinstance(perc, (int, float)):
+        total_distances.append(None)
+        percent_lats.append(None)
+        percent_lons.append(None)
+        continue
+
+    dist, lat, lon = process_linestring(geom.wkt, perc)
     total_distances.append(dist)
     percent_lats.append(lat)
     percent_lons.append(lon)
+
 
 # Guardar en el DataFrame
 df["total_distance_m"] = total_distances
@@ -116,5 +121,7 @@ df["point_at_percent_lon"] = percent_lons
 
 # Exportar resultado
 print(df[["percfrref", "total_distance_m", "point_at_percent_lat", "point_at_percent_lon"]].head())
-df.to_csv("output_with_dynamic_percentages083.csv", index=False)
+df.to_csv("outputfinal.csv", index=False)
+
+
 
