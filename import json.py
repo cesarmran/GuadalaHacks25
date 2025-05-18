@@ -7,7 +7,7 @@ archivo = "/Users/ebonyvaladez/Desktop/data/STREETS_NAMING_ADDRESSING/SREETS_NAM
 # Leer el archivo
 gdf = gpd.read_file(archivo)
 
-print(gdf['geometry'].head())
+print(gdf.head(15))
 
 
 df = pd.read_csv("/Users/ebonyvaladez/Desktop/data/POIs/POI_4815075.csv")

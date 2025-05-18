@@ -20,7 +20,7 @@ def buscar_poi_con_overpass(nombre, lat, lon, radio_m=100):
     response = requests.post(url, data=query, headers=headers)
 
     if response.status_code != 200:
-        print("❌ Error en Overpass:", response.status_code)
+        print("Error en Overpass:", response.status_code)
         return []
 
     data = response.json()
