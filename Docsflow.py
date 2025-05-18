@@ -125,7 +125,70 @@ df["point_at_percent_lon"] = percent_lons
 # Exportar resultado
 print(df[["percfrref", "total_distance_m", "point_at_percent_lat", "point_at_percent_lon"]].head())
 # fin caso 1
+def buscar_pois(nombre, lat, lon, radio_m=500):
+    query = f"""
+    [out:json][timeout:25];
+    (
+      node["name"~"{nombre}", i](around:{radio_m},{lat},{lon});
+      way["name"~"{nombre}", i](around:{radio_m},{lat},{lon});
+      relation["name"~"{nombre}", i](around:{radio_m},{lat},{lon});
+    );
+    out center;
+    """
+    url = "https://overpass-api.de/api/interpreter"
+    headers = {'User-Agent': 'POIRadiusChecker/1.0 (tucorreo@ejemplo.com)'}
+    try:
+        response = requests.post(url, data=query, headers=headers, timeout=25)
+        if response.status_code != 200:
+            return "No encontrado"
+        data = response.json()
+        nombres = [e['tags'].get('name', 'N/A') for e in data.get('elements', []) if 'tags' in e]
+        return "; ".join(nombres) if nombres else "No encontrado"
+    except:
+        return "Error"
+
+
+cache = {}
+
+def consulta_con_cache(row):
+    lat, lon = row["point_at_percent_lat"], row["point_at_percent_lon"]
+    nombre = str(row["poi_name"]).strip()
+    key = (nombre, lat, lon)
+    if pd.isna(lat) or pd.isna(lon):
+        return ""
+    if key in cache:
+        return cache[key]
+    resultado = buscar_pois(nombre, lat, lon, 500)
+    cache[key] = resultado
+    return resultado
+
+rows = list(df.to_dict("records"))
+results = [None] * len(rows)
+
+with ThreadPoolExecutor(max_workers=10) as executor:
+    futures = {executor.submit(consulta_con_cache, row): i for i, row in enumerate(rows)}
+    print("Consultando POIs...")
+    completed = 0
+    total = len(futures)
+
+    for future in as_completed(futures):
+        i = futures[future]
+        try:
+            results[i] = future.result()
+        except Exception:
+            results[i] = "Error"
+        completed += 1
+        print(f"Progreso: {completed}/{total}", end='\r')
+    
+
+df["pois_encontrados"] = results
+
+# ---------------- 4. EXPORTAR ----------------
+
+
 df.to_csv("C:/Users/pao_j/Documents/1_Principal/1_Escuela/Extracurricular/Hackathon/gdl2025/results/outputscenary1.csv", index=False)
+print(f"Proceso completo. Archivo guardado en")
+
 
 
 
