@@ -1,4 +1,5 @@
 import geopandas as gpd
+import pandas as pd
 
 # Ruta al archivo (puede ser .geojson o .json si es geoespacial)
 archivo = "/Users/ebonyvaladez/Desktop/data/STREETS_NAMING_ADDRESSING/SREETS_NAMING_ADDRESSING_4815075.geojson"
@@ -6,5 +7,9 @@ archivo = "/Users/ebonyvaladez/Desktop/data/STREETS_NAMING_ADDRESSING/SREETS_NAM
 # Leer el archivo
 gdf = gpd.read_file(archivo)
 
-print(gdf.head(5))
+print(gdf['geometry'].head())
+
+
+df = pd.read_csv("/Users/ebonyvaladez/Desktop/data/POIs/POI_4815075.csv")
+print(df.columns)
 
