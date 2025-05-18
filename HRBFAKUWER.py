@@ -1,18 +1,19 @@
 import pandas as pd
 import math
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import pickle
+from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
+import os
 
 # ---------------- CONFIGURACIÓN ----------------
 nav_path = "/Users/ebonyvaladez/Desktop/data/output_with_dynamic_percentages.csv"
 poi_path = "/Users/ebonyvaladez/Desktop/data/POIs/POI_4815075.csv"
 output_path = "/Users/ebonyvaladez/Desktop/Ebonysss/GuadalaHacks25/output.csv"
-target_percentage = 0.25  # puedes cambiarlo
-radio_m = 500  # radio de búsqueda para Overpass
+cache_path = "cache_overpass.pkl"
+radio_m = 500
 
-# ---------------- FUNCIONES ----------------
-
+# ---------------- FUNCIONES AUXILIARES ----------------
 def haversine(coord1, coord2):
     R = 6371000
     lat1, lon1 = coord1
@@ -21,7 +22,7 @@ def haversine(coord1, coord2):
     phi2 = math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    a = math.sin(dphi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 def process_linestring(wkt_string, percent):
@@ -40,7 +41,7 @@ def process_linestring(wkt_string, percent):
     except:
         return None, None, None
 
-def buscar_pois(nombre, lat, lon, radio_m=100):
+def buscar_pois(nombre, lat, lon, radio_m=100, intentos=3):
     query = f"""
     [out:json][timeout:25];
     (
@@ -52,44 +53,46 @@ def buscar_pois(nombre, lat, lon, radio_m=100):
     """
     url = "https://overpass-api.de/api/interpreter"
     headers = {'User-Agent': 'POIRadiusChecker/1.0 (tucorreo@ejemplo.com)'}
-    try:
-        response = requests.post(url, data=query, headers=headers, timeout=25)
-        if response.status_code != 200:
-            return "No encontrado"
-        data = response.json()
-        nombres = [e['tags'].get('name', 'N/A') for e in data.get('elements', []) if 'tags' in e]
-        return "; ".join(nombres) if nombres else "No encontrado"
-    except:
-        return "Error"
+    for intento in range(intentos):
+        try:
+            r = requests.post(url, data=query, headers=headers, timeout=25)
+            if r.status_code == 200:
+                data = r.json()
+                nombres = [e['tags'].get('name', 'N/A') for e in data.get('elements', []) if 'tags' in e]
+                return "; ".join(nombres) if nombres else "No encontrado"
+        except Exception:
+            continue
+    return "Error"
 
-# ---------------- 1. FUSIÓN DE ARCHIVOS ----------------
-
+# ---------------- MAIN ----------------
 nav_df = pd.read_csv(nav_path)
 poi_df = pd.read_csv(poi_path)
 
 nav_df.columns = nav_df.columns.str.lower()
 poi_df.columns = poi_df.columns.str.lower()
 
-# CAMBIA ESTA LÍNEA si tienes otro nombre de columna que representa el nombre del POI
-nombre_columna = "poi_name"  # <-- cámbiala si tienes otro nombre
-if nombre_columna not in poi_df.columns:
-    poi_df[nombre_columna] = poi_df["poi_id"]  # fallback a poi_id si no tienes nombre real
+# Verifica que exista 'percfrref'
+if "percfrref" not in nav_df.columns:
+    raise ValueError("Falta la columna 'percfrref' en nav_df")
 
+# Normaliza a decimal entre 0 y 1
+nav_df["percent_decimal"] = nav_df["percfrref"] / 100.0
 
+# Nombre del POI
+nombre_col = "poi_name"
+if nombre_col not in poi_df.columns:
+    poi_df[nombre_col] = poi_df["poi_id"]
 
-merged = pd.merge(nav_df[['link_id', 'geometry']],
-                 poi_df[['link_id', 'poi_id', nombre_columna]],
+# Fusión
+merged = pd.merge(nav_df[['link_id', 'geometry', 'percent_decimal']],
+                  poi_df[['link_id', 'poi_id', nombre_col]],
                   on='link_id', how='inner')
 
-merged = merged.head(50)  # solo las primeras 20 filas
-# ---------------- 2. CALCULAR COORDENADAS ----------------
-
-total_distances = []
-percent_lats = []
-percent_lons = []
-
-for geom in merged["geometry"]:
-    dist, lat, lon = process_linestring(geom, target_percentage)
+# Calcular coordenadas en la línea
+total_distances, percent_lats, percent_lons = [], [], []
+for _, row in merged.iterrows():
+    porcentaje = row["percent_decimal"]
+    dist, lat, lon = process_linestring(row["geometry"], porcentaje)
     total_distances.append(dist)
     percent_lats.append(lat)
     percent_lons.append(lon)
@@ -98,13 +101,16 @@ merged["total_distance_m"] = total_distances
 merged["percent_lat"] = percent_lats
 merged["percent_lon"] = percent_lons
 
-# ---------------- 3. CONSULTAR OVERPASS EN PARALELO ----------------
+# Cargar cache si existe
+if os.path.exists(cache_path):
+    with open(cache_path, "rb") as f:
+        cache = pickle.load(f)
+else:
+    cache = {}
 
-cache = {}
-
-def consulta_con_cache(row):
+def consulta(row):
     lat, lon = row["percent_lat"], row["percent_lon"]
-    nombre = str(row[nombre_columna])
+    nombre = str(row[nombre_col])
     key = (nombre, lat, lon)
     if pd.isna(lat) or pd.isna(lon):
         return ""
@@ -114,21 +120,17 @@ def consulta_con_cache(row):
     cache[key] = resultado
     return resultado
 
-rows = list(merged.to_dict("records"))
-results = [None] * len(rows)
+# Ejecutar en paralelo
+rows = merged.to_dict("records")
+with ThreadPoolExecutor(max_workers=5) as executor:
+    resultados = list(tqdm(executor.map(consulta, rows), total=len(rows), desc="Consultando POIs"))
 
-with ThreadPoolExecutor(max_workers=10) as executor:
-    futures = {executor.submit(consulta_con_cache, row): i for i, row in enumerate(rows)}
-    for future in tqdm(as_completed(futures), total=len(futures), desc="Consultando POIs"):
-        i = futures[future]
-        try:
-            results[i] = future.result()
-        except Exception:
-            results[i] = "Error"
+merged["pois_encontrados"] = resultados
 
-merged["pois_encontrados"] = results
-
-# ---------------- 4. EXPORTAR ----------------
+# Guardar resultados y cache
+with open(cache_path, "wb") as f:
+    pickle.dump(cache, f)
+resultados = list(tqdm(executor.map(consulta, rows), total=len(rows), desc="Consultando POIs"))
 
 merged.to_csv(output_path, index=False)
-print(f"✅ Proceso completo. Archivo guardado en: {output_path}")
+print(f"✅ Archivo guardado en {output_path}")
