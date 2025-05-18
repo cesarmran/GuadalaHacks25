@@ -1,37 +1,15 @@
-import matplotlib.pyplot as plt
-from shapely.geometry import LineString, Point
+import pandas as pd
+import geopandas as gpd
+from shapely.geometry import Point, LineString
 import numpy as np
-from PIL import Image
 
 def lado_del_poi(linea, poi_point, porcentaje):
-    """
-    Determina si el POI está a la izquierda, derecha o sobre la línea
-    según el sentido de la línea del punto interpolado.
-    
-    Parámetros:
-    - linea: objeto shapely LineString
-    - poi_point: objeto shapely Point (lat/lon del POI)
-    - porcentaje: posición del POI en la línea (entre 0 y 1)
-
-    Retorna:
-    - 'izquierda', 'derecha' o 'sobre la línea'
-    """
-    # Punto en la línea según el porcentaje (punto base)
     p1 = linea.interpolate(linea.length * porcentaje)
-    
-    # Punto un poco más adelante en la línea para formar un vector direccional
-    delta = 0.01  # pequeño paso hacia adelante (1%)
+    delta = 0.01
     p2 = linea.interpolate(min(linea.length * (porcentaje + delta), linea.length))
-
-    # Vector de dirección de la línea (p1 → p2)
     v = np.array([p2.x - p1.x, p2.y - p1.y])
-    
-    # Vector desde la línea hacia el POI (p1 → poi)
     w = np.array([poi_point.x - p1.x, poi_point.y - p1.y])
-
-    # Producto cruzado (determinante en 2D)
     det = v[0] * w[1] - v[1] * w[0]
-
     if det > 0:
         return "izquierda"
     elif det < 0:
@@ -39,50 +17,47 @@ def lado_del_poi(linea, poi_point, porcentaje):
     else:
         return "sobre la línea"
 
-# Línea de ejemplo: calle de oeste a este
-linea = LineString([(-99.62957, 19.27045), (-99.6297 ,19.27056)])
-poi = Point(-99.629635, 19.270505)
-porcentaje = .50
+# === Rutas a tus archivos ===
+ruta_pois = "/Users/ebonyvaladez/Desktop/data/output_with_dynamic_percentages.csv"
+ruta_lineas = "/Users/ebonyvaladez/Desktop/data/STREETS_NAMING_ADDRESSING/SREETS_NAMING_ADDRESSING_4815075.geojson"  # puede ser .geojson o .shp
+output_path = "/Users/ebonyvaladez/Desktop/data/output_con_lado.csv"
 
-# Verificar de qué lado está
-lado = lado_del_poi(linea, poi, porcentaje)
-print(f"El POI está a la {lado} de la línea.")
+# === CARGAR ARCHIVOS ===
+df_pois = pd.read_csv(ruta_pois)
+df_pois.columns = df_pois.columns.str.lower()
+gdf_lineas = gpd.read_file(ruta_lineas)
+gdf_lineas.columns = gdf_lineas.columns.str.lower()
 
-# === Punto de interpolación y dirección ===
-p1 = linea.interpolate(linea.length * porcentaje)
-p2 = linea.interpolate(min(linea.length * (porcentaje + 0.01), linea.length))
+# === CONFIGURACIÓN DE COLUMNAS ===
+lat_col = "point_at_percent_lat"
+lon_col = "point_at_percent_lon"
+perc_col = "percfrref"
+link_col = "link_id"
 
-# === Preparar coordenadas ===
-x_line, y_line = linea.xy
-x_vector = [p1.x, p2.x]
-y_vector = [p1.y, p2.y]
+# Normaliza el porcentaje a 0–1
+df_pois["porcentaje"] = df_pois[perc_col] / 100
 
-# === Bbox del tile ===
-xmin = -99.635009765625
-xmax = -99.6240234375
-ymin = 19.269665296502325
-ymax = 19.28003579627975
+# GeoDataFrame de POIs
+gdf_pois = gpd.GeoDataFrame(
+    df_pois,
+    geometry=gpd.points_from_xy(df_pois[lon_col], df_pois[lat_col]),
+    crs="EPSG:4326"
+)
 
-from PIL import Image
+# Renombra la geometría de líneas para evitar colisión con la del POI
+gdf_lineas = gdf_lineas.rename(columns={"geometry": "geometry_linea"})
 
-tile = Image.open("/Users/ebonyvaladez/Desktop/data/docs/satellite_tile.png")  
-# Gráfico
-fig, ax = plt.subplots(figsize=(8, 8))
-ax.imshow(tile, extent=[xmin, xmax, ymin, ymax], origin='upper')  # fondo tile
+# Merge con geometría renombrada
+merged = gdf_pois.merge(gdf_lineas[[link_col, "geometry_linea"]], on=link_col, how="left")
 
-# Geometrías
-ax.plot(x_line, y_line, color='blue', linewidth=2, label='Línea (sentido →)')
-ax.arrow(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y, head_width=0.0001, color='black', length_includes_head=True, label='Dirección')
-ax.plot(p1.x, p1.y, 'go', label='Punto interpolado')
-ax.plot(poi.x, poi.y, 'ro', markersize=10, label='POI')
+# Cálculo de lado
+def calcular_lado(row):
+    if pd.isnull(row["geometry_linea"]):
+        return "sin_linea"
+    return lado_del_poi(row["geometry_linea"], row["geometry"], row["porcentaje"])
 
-# Estilo
-ax.set_title(f'POI está a la {lado} de la línea')
-ax.set_xlabel('Longitud')
-ax.set_ylabel('Latitud')
-ax.axis('equal')
-ax.grid(True)
-ax.legend()
-plt.tight_layout()
-plt.show()
+merged["lado"] = merged.apply(calcular_lado, axis=1)
 
+# Guardar CSV (sin geometría si no la necesitas)
+merged.drop(columns=["geometry", "geometry_linea"]).to_csv(output_path, index=False)
+print(f"✅ Listo. Archivo guardado en: {output_path}")
