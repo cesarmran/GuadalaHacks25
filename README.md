@@ -1,56 +1,41 @@
 # GuadalaHacks25
 This code detects and fixes automatically three type of errors in the POI's (Point of interest) ubication.
-Scenary 1: There is no POI in reality because a change in location or closure hasn't been updated
-Scenary 2: 
+>Scenary 1: There is no POI in reality because a change in location or closure hasn't been updated
+>Scenary 2: The POI is placed on the incorrect side of the road
+>Scenary 3: The POI has an incorrect multiply digitised attribution
+
 ## Requirements
 
 Install the following python libraries:
 
-- OpenCV:
+- Geopandas:
 ```
-pip install opencv-python
+pip install geopandas
+```
+
+- Requests:
+```
+pip install requests
 ```
 
 - Numpy:
 ```
-pip install numpy
+pip install numpy   
 ```
 
-- EasyOCR:
+- Shapely:
 ```
-pip install easyocr
+pip install shapely
 ```
 
-- Matplotlib:
-```
-pip install matplotlib
-```
 
 ## How It Works
-
-- When prompted, enter the filename of the image you want to analyze. Available options include:
-
-```
-bills_case_1.jpg
-```
-
-```
-bills_case_2.jpg
-```
-
-```
-bills_total.jpg
-```
-
-- The total amount of money and the breakdown of bills will be printed in the console.
-
-- A new image named result.jpg will be saved, where each detected bill is highlighted with a green rectangle
-and its value is annotated on top.
+- After executing it, it will print a message that says that the 3 output files were successfully created. "outputscenary1.csv" contains which POIs weren't found, "caso2final.csv" has which POIs are in the wrong side of the road (scenary 2) and "invalid_poi" is composed of the poi's name that have an incorrect multiply digitised attribution.
 
 ## Execution
 
 Run the script from your terminal using:
 
 ```
-python -u "path in which you downloaded the repository/main.py" 
+python -u "path in which you downloaded the repository/Docsflow.py" 
 ```
