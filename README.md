@@ -1,8 +1,8 @@
 # GuadalaHacks25
 This code detects and fixes automatically three type of errors in the POI's (Point of interest) ubication.
->Scenary 1: There is no POI in reality because a change in location or closure hasn't been updated
->Scenary 2: The POI is placed on the incorrect side of the road
->Scenary 3: The POI has an incorrect multiply digitised attribution
+> - Scenary 1: There is no POI in reality because a change in location or closure hasn't been updated
+> - Scenary 2: The POI is placed on the incorrect side of the road
+> - Scenary 3: The POI has an incorrect multiply digitised attribution
 
 ## Requirements
 
