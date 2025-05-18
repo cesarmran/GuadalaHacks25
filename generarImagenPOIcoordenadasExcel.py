@@ -2,10 +2,15 @@ import pandas as pd
 import requests
 import math
 import os
+import matplotlib.pyplot as plt
+from PIL import Image
+from shapely.geometry import LineString
+import geopandas as gpd
 
 # ---------------------------------------
 # Funciones base de coordenadas y tiles
 # ---------------------------------------
+geojson_folder = 'C:/Users/cmora/Downloads/DATA/STREETS_NAV'
 
 def lat_lon_to_tile(lat, lon, zoom):
     lat_rad = math.radians(lat)
@@ -56,13 +61,29 @@ def get_satellite_tile(lat, lon, zoom, tile_format, tile_size, api_key, output_p
     bounds = get_tile_bounds(x, y, zoom)
     return create_wkt_polygon(bounds)
 
+# Funciones auxiliares para dibujo
+# Función corregida para convertir lat/lon a píxeles
+def geo_to_pixel(lat, lon, lat_min, lon_min, lat_max, lon_max, width, height):
+    px = (lon - lon_min) / (lon_max - lon_min) * width
+    py = (lat_max - lat) / (lat_max - lat_min) * height
+    return px, py
+
+
+def buscar_link_en_geojsons(link_id):
+    for file in os.listdir(geojson_folder):
+        if file.endswith(".geojson"):
+            gdf = gpd.read_file(os.path.join(geojson_folder, file))
+            if str(link_id) in gdf['link_id'].astype(str).values:
+                return gdf[gdf['link_id'].astype(str) == str(link_id)].geometry.values[0]
+    return None
+
 # ---------------------------------------
 # PARTE PRINCIPAL: Leer CSV y procesar
 # ---------------------------------------
 
 # Configuración
 api_key = 'iQPGr-iOp1v3ZbkoCmVCX2T2B91QQziGAz4uD5fax7o'
-zoom_level = 15
+zoom_level = 17
 tile_size = 512
 tile_format = 'png'
 ruta_csv = 'C:/Users/cmora/Documents/sat_tiles/pois_con_coordenadas.csv'
@@ -84,3 +105,28 @@ for _, row in df.iterrows():
     nombre_archivo = f"sat_poi_{poi_id}"
     wkt = get_satellite_tile(lat, lon, zoom_level, tile_format, tile_size, api_key, carpeta_salida, nombre_archivo)
     print(f"📍 WKT Bounds for POI {poi_id}: {wkt}")
+
+    # Agregar punto y línea a la imagen
+    imagen_path = os.path.join(carpeta_salida, f'{nombre_archivo}.{tile_format}')
+    if os.path.exists(imagen_path):
+        img = Image.open(imagen_path)
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.imshow(img)
+
+        x_tile, y_tile = lat_lon_to_tile(lat, lon, zoom_level)
+        (lat1, lon1), (_, _), (lat2, lon2), (_, _) = get_tile_bounds(x_tile, y_tile, zoom_level)
+
+        px, py = geo_to_pixel(lat, lon, lat1, lon1, lat2, lon2, img.width, img.height)
+        ax.plot(px, py, 'ro', markersize=5)
+
+        link_id = row['LINK_ID']
+        geom = buscar_link_en_geojsons(link_id)
+        if isinstance(geom, LineString):
+            coords = [geo_to_pixel(lat, lon, lat1, lon1, lat2, lon2, img.width, img.height)
+                      for lon, lat in geom.coords]
+            xs, ys = zip(*coords)
+            ax.plot(xs, ys, color='cyan', linewidth=2)
+
+        ax.axis('off')
+        plt.savefig(imagen_path, bbox_inches='tight', pad_inches=0)
+        plt.close()
