@@ -114,7 +114,8 @@ for _, row in df.iterrows():
         ax.imshow(img)
 
         x_tile, y_tile = lat_lon_to_tile(lat, lon, zoom_level)
-        (lat1, lon1), (_, _), (lat2, lon2), (_, _) = get_tile_bounds(x_tile, y_tile, zoom_level)
+        (lat_min, lon_min), (_, _), (lat_max, lon_max), (_, _) = get_tile_bounds(x_tile, y_tile, zoom_level)
+
 
         px, py = geo_to_pixel(lat, lon, lat1, lon1, lat2, lon2, img.width, img.height)
         ax.plot(px, py, 'ro', markersize=5)
