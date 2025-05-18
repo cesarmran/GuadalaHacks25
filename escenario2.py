@@ -5,9 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 # ---------------- CONFIGURACIÓN ----------------
-nav_path = "C:/Users/cmora/Documents/GuadalaHacks25/output_with_dynamic_percentages.csv"
-poi_path = "C:/Users/cmora/Downloads/DATA/POIs/POI_4815075.csv"
-output_path = "C:/Users/cmora/Documents/Guadalahacks25/output.csv"
+nav_path = "/Users/ebonyvaladez/Desktop/data/output_with_dynamic_percentages.csv"
+poi_path = "/Users/ebonyvaladez/Desktop/data/POIs/POI_4815075.csv"
+output_path = "/Users/ebonyvaladez/Desktop/Ebonysss/GuadalaHacks25/output.csv"
 target_percentage = 0.25  # puedes cambiarlo
 radio_m = 500  # radio de búsqueda para Overpass
 
@@ -81,7 +81,6 @@ merged = pd.merge(nav_df[['link_id', 'geometry']],
                  poi_df[['link_id', 'poi_id', nombre_columna]],
                   on='link_id', how='inner')
 
-merged = merged.head(50)  # solo las primeras 20 filas
 # ---------------- 2. CALCULAR COORDENADAS ----------------
 
 total_distances = []
