@@ -44,10 +44,10 @@ def buscar_poi_con_overpass(nombre, lat, lon, radio_m=100):
     return resultados
 
 # Ejemplo de uso
-nombre = "INSTITUTO CENCA"
-lat = 19.27045
-lon = -99.62957
-radio = 100  # metros
+nombre = "OXXO"
+lat = 19.27056
+lon = -99.6297
+radio = 500  # metros
 
 resultados = buscar_poi_con_overpass(nombre, lat, lon, radio)
 
