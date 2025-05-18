@@ -13,8 +13,6 @@ archivo = "C:/Users/pao_j/Documents/1_Principal/1_Escuela/Extracurricular/Hackat
 file1 = gpd.read_file(archivo)
 file2 = pd.read_csv("C:/Users/pao_j/Documents/1_Principal/1_Escuela/Extracurricular/Hackathon/gdl2025/POIs/POI_4815075.csv")
 
-
-
 # Load the CSV files
 file1.columns = file1.columns.str.lower()
 file2.columns = file2.columns.str.lower()
@@ -35,7 +33,7 @@ merged = pd.merge(file1[[common_column, file1_column]],
 
 
 # Parámetros
-merged = merged.head(300)
+merged=merged.head(300)
 df = merged
 
 geometry_column = "geometry"
@@ -52,7 +50,7 @@ def haversine(coord1, coord2):
     delta_phi = math.radians(lat2 - lat1)
     delta_lambda = math.radians(lon2 - lon1)
 
-    a = math.sin(delta_phi / 2)*2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2)*2
+    a = math.sin(delta_phi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return R * c
@@ -126,73 +124,73 @@ df["point_at_percent_lon"] = percent_lons
 
 # Exportar resultado
 print(df[["percfrref", "total_distance_m", "point_at_percent_lat", "point_at_percent_lon"]].head())
+# fin caso 1
+df.to_csv("C:/Users/pao_j/Documents/1_Principal/1_Escuela/Extracurricular/Hackathon/gdl2025/results/outputscenary1.csv", index=False)
 
 
-def buscar_pois(nombre, lat, lon, radio_m=500):
-    query = f"""
-    [out:json][timeout:25];
-    (
-      node["name"~"{nombre}", i](around:{radio_m},{lat},{lon});
-      way["name"~"{nombre}", i](around:{radio_m},{lat},{lon});
-      relation["name"~"{nombre}", i](around:{radio_m},{lat},{lon});
-    );
-    out center;
-    """
-    url = "https://overpass-api.de/api/interpreter"
-    headers = {'User-Agent': 'POIRadiusChecker/1.0 (tucorreo@ejemplo.com)'}
-    try:
-        response = requests.post(url, data=query, headers=headers, timeout=25)
-        if response.status_code != 200:
-            return "No encontrado"
-        data = response.json()
-        nombres = [e['tags'].get('name', 'N/A') for e in data.get('elements', []) if 'tags' in e]
-        return "; ".join(nombres) if nombres else "No encontrado"
-    except:
-        return "Error"
+
+def lado_del_poi(linea, poi_point, porcentaje):
+    p1 = linea.interpolate(linea.length * porcentaje)
+    delta = 0.01
+    p2 = linea.interpolate(min(linea.length * (porcentaje + delta), linea.length))
+    v = np.array([p2.x - p1.x, p2.y - p1.y])
+    w = np.array([poi_point.x - p1.x, poi_point.y - p1.y])
+    det = v[0] * w[1] - v[1] * w[0]
+    if det > 0:
+        return "izquierda"
+    elif det < 0:
+        return "derecha"
+    else:
+        return "sobre la línea"
+
+# === Rutas a tus archivos ===
+ruta_pois = df
+ruta_lineas = archivo
+output_path = "C:/Users/pao_j/Documents/1_Principal/1_Escuela/Extracurricular/Hackathon/gdl2025/results/caso2final.csv"
+
+# === CARGAR ARCHIVOS ===
+df_pois = df.copy()
+df_pois.columns = df_pois.columns.str.lower()
+gdf_lineas = gpd.read_file(ruta_lineas)
+gdf_lineas.columns = gdf_lineas.columns.str.lower()
+
+# === CONFIGURACIÓN DE COLUMNAS ===
+lat_col = "point_at_percent_lat"
+lon_col = "point_at_percent_lon"
+perc_col = "percfrref"
+link_col = "link_id"
+
+# Normaliza el porcentaje a 0–1
+df_pois["porcentaje"] = df_pois[perc_col] / 100
+
+# GeoDataFrame de POIs
+gdf_pois = gpd.GeoDataFrame(
+    df_pois,
+    geometry=gpd.points_from_xy(df_pois[lon_col], df_pois[lat_col]),
+    crs="EPSG:4326"
+)
+
+# Renombra la geometría de líneas para evitar colisión con la del POI
+gdf_lineas = gdf_lineas.rename(columns={"geometry": "geometry_linea"})
+
+# Merge con geometría renombrada
+combinados = gdf_pois.merge(gdf_lineas[[link_col, "geometry_linea"]], on=link_col, how="left")
+
+# Cálculo de lado
+def calcular_lado(row):
+    if pd.isnull(row["geometry_linea"]):
+        return "sin_linea"
+    return lado_del_poi(row["geometry_linea"], row["geometry"], row["porcentaje"])
+
+combinados["lado"] = combinados.apply(calcular_lado, axis=1)
+
+# Guardar CSV (sin geometría si no la necesitas)
+combinados.drop(columns=["geometry", "geometry_linea"]).to_csv(output_path, index=False)
+print(f"Listo. Archivo guardado en: {output_path}")
 
 
-cache = {}
 
-def consulta_con_cache(row):
-    lat, lon = row["point_at_percent_lat"], row["point_at_percent_lon"]
-    nombre = str(row["poi_name"]).strip()
-    key = (nombre, lat, lon)
-    if pd.isna(lat) or pd.isna(lon):
-        return ""
-    if key in cache:
-        return cache[key]
-    resultado = buscar_pois(nombre, lat, lon, 500)
-    cache[key] = resultado
-    return resultado
-
-rows = list(df.to_dict("records"))
-results = [None] * len(rows)
-
-with ThreadPoolExecutor(max_workers=10) as executor:
-    futures = {executor.submit(consulta_con_cache, row): i for i, row in enumerate(rows)}
-    print("Consultando POIs...")
-    completed = 0
-    total = len(futures)
-
-    for future in as_completed(futures):
-        i = futures[future]
-        try:
-            results[i] = future.result()
-        except Exception:
-            results[i] = "Error"
-        completed += 1
-        print(f"Progreso: {completed}/{total}", end='\r')
-    
-
-df["pois_encontrados"] = results
-
-# ---------------- 4. EXPORTAR ----------------
-
-
-df.to_csv("outputscenario2.csv", index=False)
-print(f"Proceso completo. Archivo guardado en")
-
-def cargar_links(path_archivo, path_salida="columnas_disponibles.csv"):
+def cargar_links(path_archivo, path_salida="C:/Users/pao_j/Documents/1_Principal/1_Escuela/Extracurricular/Hackathon/gdl2025/results/invalid_poi.csv"):
     gdf = gpd.read_file(path_archivo)
     columnas = pd.DataFrame(gdf.columns, columns=["columnas"])
     columnas.to_csv(path_salida, index=False)
