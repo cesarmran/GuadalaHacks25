@@ -1,6 +1,7 @@
 # GuadalaHacks25
 This code detects and fixes automatically three type of errors in the POI's (Point of interest) ubication.
-Scenary 1: There is no POI in reality because it hasn't been updated a possible c
+Scenary 1: There is no POI in reality because a change in location or closure hasn't been updated
+Scenary 2: 
 ## Requirements
 
 Install the following python libraries:
